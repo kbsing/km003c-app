@@ -1,0 +1,30 @@
+# Rust / Cargo
+/target/
+core/target/
+km003c-parse/target/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+
+# Frontend build output
+dist/
+
+# Local snapshots made before refactors (superseded by git history)
+backup/
+
+# Dev logs
+*.log
+.codex-vite.log
+
+# Tauri build artifacts
+src-tauri/WixTools/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local-only dev notes (kept out of the published repo)
+docs-local/

@@ -1,0 +1,26 @@
+[package]
+name = "km003c-app"
+version.workspace = true
+edition.workspace = true
+description = "KM003C host application"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+km003c-core = { path = "../core" }
+km003c-parse = { path = "../km003c-parse" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+tiny_http = "0.12"
+local-ip-address = "0.6"
+
+[features]
+# Prevents an extra console window on Windows in release builds.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

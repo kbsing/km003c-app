@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["core", "km003c-parse", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

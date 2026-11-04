@@ -1,0 +1,23 @@
+:root {
+  font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  color: #18181b;
+  background: #f4f4f5;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { min-width: 320px; min-height: 100%; margin: 0; }
+
+body { min-height: 100vh; }
+
+button, input { font: inherit; }
+
+button { -webkit-tap-highlight-color: transparent; }
+
+button:focus-visible, input:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+::selection { background: #dbeafe; color: #1e3a8a; }

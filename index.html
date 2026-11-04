@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Star monitor</title>
+    <style>
+      /* Shown immediately by the HTML; removed when Svelte mounts. Keeps the
+         startup from being a blank white screen while the JS bundle parses. */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        gap: 14px;
+        align-content: center;
+        color: #64748b;
+        background: #f4f4f5;
+        font: 12px ui-monospace, "Cascadia Mono", Consolas, monospace;
+      }
+      #boot .ring {
+        width: 30px;
+        height: 30px;
+        border: 3px solid #d8dee4;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: boot-spin 0.9s linear infinite;
+      }
+      @keyframes boot-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="boot" role="status"><div class="ring"></div><p>Star monitor 正在启动…</p></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

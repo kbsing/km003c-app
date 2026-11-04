@@ -1,0 +1,9 @@
+[package]
+name = "km003c-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nusb = "0.2.7"
+hidapi = "2.6"
+serialport = "4"

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core permissions for the main window. Only event listening and window basics are needed; this app talks to USB from Rust, not from the webview.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

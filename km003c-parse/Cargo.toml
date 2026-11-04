@@ -1,0 +1,17 @@
+[package]
+name = "km003c-parse"
+version.workspace = true
+edition.workspace = true
+description = "Human-readable USB PD decoding, exposed as a Rust library and a C-ABI DLL (JSON in/out)"
+license = "MIT OR Apache-2.0"
+
+# rlib for Rust consumers; cdylib (km003c_parse.dll / .so / .dylib) for
+# C/C++/C#/Python/Go etc. via the C ABI.
+[lib]
+name = "km003c_parse"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+km003c-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

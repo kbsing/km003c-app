@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Star monitor</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #273449;
+    --line: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --v: #38bdf8;
+    --a: #fbbf24;
+    --w: #a78bfa;
+    --ok: #4ade80;
+    --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  header h1 { margin: 0; font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+    flex: none;
+  }
+  .badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .badge.ok { color: var(--ok); }
+  .badge.reconnect { color: var(--bad); }
+  .badge.idle { color: var(--muted); }
+
+  .readouts {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 4px 16px 10px;
+  }
+  .cell {
+    display: grid;
+    gap: 2px;
+    padding: 12px 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+  }
+  .cell .label { color: var(--muted); font-size: 11px; }
+  .cell .row { display: flex; align-items: baseline; gap: 4px; }
+  .cell .value { font-size: 26px; font-weight: 700; line-height: 1; }
+  .cell .unit { color: var(--muted); font-size: 12px; }
+  .cell.v .value { color: var(--v); }
+  .cell.a .value { color: var(--a); }
+  .cell.w .value { color: var(--w); }
+
+  .meta {
+    display: flex;
+    gap: 18px;
+    padding: 2px 18px 12px;
+    color: var(--muted);
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+
+  .chart-wrap {
+    margin: 0 16px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+  }
+  .chart-wrap #chart { display: block; width: 100%; height: 200px; touch-action: pan-y; }
+  .chart-legend { display: flex; gap: 18px; padding: 8px 4px 0; color: var(--muted); font-size: 11px; }
+  .chart-legend .kv { color: var(--v); }
+  .chart-legend .ka { color: var(--a); }
+  .chart-legend .window { margin-left: auto; }
+
+  footer {
+    padding: 10px 18px 24px;
+    color: var(--muted);
+    font-size: 11px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="device-name">未连接</h1>
+  <span id="badge" class="badge idle">连接中…</span>
+</header>
+
+<section class="readouts">
+  <div class="cell v"><span class="label">电压 VBUS</span><div class="row"><span class="value" id="v">--</span><span class="unit">V</span></div></div>
+  <div class="cell a"><span class="label">电流 IBUS</span><div class="row"><span class="value" id="a">--</span><span class="unit">A</span></div></div>
+  <div class="cell w"><span class="label">功率</span><div class="row"><span class="value" id="w">--</span><span class="unit">W</span></div></div>
+</section>
+
+<section class="meta">
+  <span id="temp">温度 --</span>
+  <span id="cc">CC1 -- &nbsp;CC2 --</span>
+</section>
+
+<section class="chart-wrap">
+  <div id="chart"></div>
+  <div class="chart-legend"><span class="kv">— 电压</span><span class="ka">— 电流</span><span class="window" id="window-label">最近 60 秒</span></div>
+</section>
+
+<footer id="stats"></footer>
+
+<script src="/echarts.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var WINDOW = 60; // seconds of chart history
+  var MAX_POINTS = 8000;
+  var POLL_MS = 400;
+  var MONO = 'ui-monospace, "Cascadia Mono", Consolas, monospace';
+
+  var badge = document.getElementById('badge');
+  var deviceNameEl = document.getElementById('device-name');
+  var vEl = document.getElementById('v');
+  var aEl = document.getElementById('a');
+  var wEl = document.getElementById('w');
+  var tempEl = document.getElementById('temp');
+  var ccEl = document.getElementById('cc');
+  var statsEl = document.getElementById('stats');
+  var windowLabelEl = document.getElementById('window-label');
+  var chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
+
+  var points = []; // { t, v, a }
+  var stats = null;
+  var firstSampleT = null;
+  var maxHost = null; // highest host_ms seen; samples must be monotonic
+  var connected = false;
+
+  function setBadge(cls, text) {
+    badge.className = 'badge ' + cls;
+    badge.textContent = text;
+  }
+
+  function fmt(v, digits) {
+    return v === null || v === undefined || !isFinite(v) ? '--' : v.toFixed(digits);
+  }
+
+  function renderReadouts(m) {
+    vEl.textContent = fmt(m.vbus_v, 2);
+    aEl.textContent = fmt(Math.abs(m.ibus_a), 3);
+    wEl.textContent = fmt(Math.abs(m.power_w), 2);
+    tempEl.textContent = '温度 ' + fmt(m.temp_c, 1) + ' °C';
+    ccEl.innerHTML = 'CC1 ' + fmt(m.cc1_v, 2) + 'V &nbsp;CC2 ' + fmt(m.cc2_v, 2) + 'V';
+  }
+
+  function renderStats() {
+    if (!stats) return;
+    statsEl.textContent = '采样 ' + stats.ok + ' · 轮询 ' + stats.polls +
+      ' · 丢弃 ' + stats.dropped + ' · 响应最大 ' + stats.largest_response + ' B';
+  }
+
+  // Samples arrive as a rolling list; accept only monotonically increasing
+  // host_ms (a drop means the acquisition restarted, so clear history).
+  function mergeSamples(list) {
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      var host = m.host_ms;
+      if (host === null || host === undefined || !isFinite(host)) continue;
+      if (maxHost !== null && host < maxHost) {
+        points = [];
+        firstSampleT = null;
+        maxHost = null;
+      }
+      if (maxHost !== null && host <= maxHost) continue;
+      maxHost = host;
+      if (firstSampleT === null) firstSampleT = host;
+      var t = (host - firstSampleT) / 1000;
+      points.push({ t: t, v: m.vbus_v, a: Math.abs(m.ibus_a) });
+    }
+    while (points.length > MAX_POINTS) points.shift();
+  }
+
+  function trimPoints() {
+    if (points.length < 2) return;
+    var cutoff = points[points.length - 1].t - WINDOW;
+    while (points.length > 0 && points[0].t < cutoff) points.shift();
+  }
+
+  function processState(s) {
+    if (!s) return;
+    if (typeof s.connected === 'boolean') connected = s.connected;
+    setBadge(connected ? 'ok' : 'idle', connected ? '已连接' : '未连接');
+    deviceNameEl.textContent = connected && s.label ? s.label : '未连接';
+
+    if (s.samples && s.samples.length > 0) {
+      mergeSamples(s.samples);
+      trimPoints();
+    }
+
+    var newest = s.samples && s.samples.length > 0 ? s.samples[s.samples.length - 1] : null;
+    if (!newest && s.latest && s.latest.measurements && s.latest.measurements.length > 0) {
+      newest = s.latest.measurements[s.latest.measurements.length - 1];
+    }
+    if (newest) renderReadouts(newest);
+
+    if (s.latest && s.latest.stats) stats = s.latest.stats;
+    renderStats();
+
+    updateChart();
+  }
+
+  function formatSeconds(seconds, spanSeconds) {
+    if (seconds == null || !isFinite(seconds)) return '';
+    if (seconds < 0) seconds = 0;
+    if (spanSeconds < 120) return seconds.toFixed(1) + 's';
+    var total = Math.round(seconds);
+    if (spanSeconds < 3600) {
+      var m = Math.floor(total / 60); var s = total % 60;
+      return m + ':' + String(s).padStart(2, '0');
+    }
+    var h = Math.floor(total / 3600); var mm = Math.floor((total % 3600) / 60); var ss = total % 60;
+    return h + ':' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  }
+
+  function buildChartOption() {
+    var first = points.length > 0 ? points[0].t : 0;
+    var last = points.length > 0 ? points[points.length - 1].t : 1;
+    var dataSpan = last - first;
+    // Show the last WINDOW seconds when there is that much history, otherwise
+    // fit the whole dataset (with a hair of padding) so the curve spans the
+    // full plot width instead of huddling on one side.
+    var rolling = dataSpan >= WINDOW;
+    var tStart, tStop;
+    if (rolling) {
+      tStart = last - WINDOW;
+      tStop = last;
+    } else {
+      var pad = Math.max(dataSpan * 0.01, 0.05);
+      tStart = first - pad;
+      tStop = last + pad;
+    }
+    var xSpan = tStop - tStart;
+    windowLabelEl.textContent = rolling ? '最近 60 秒' : '全部数据';
+
+    function seriesData(key) {
+      return points.map(function (p) {
+        var val = p[key];
+        return val === null || val === undefined || p.t < tStart ? [p.t, null] : [p.t, val];
+      });
+    }
+
+    return {
+      animation: false,
+      grid: { left: 44, right: 44, top: 10, bottom: 24 },
+      xAxis: {
+        type: 'value',
+        min: tStart,
+        max: tStop,
+        axisLabel: {
+          color: '#94a3b8', fontSize: 10, fontFamily: MONO,
+          formatter: function (v) { return formatSeconds(v, xSpan); }
+        },
+        axisLine: { lineStyle: { color: '#475569' } },
+        axisTick: { show: false },
+        splitLine: { show: false },
+      },
+      yAxis: [
+        {
+          type: 'value', position: 'left',
+          axisLabel: { color: '#38bdf8', fontSize: 10, fontFamily: MONO, formatter: function (v) { return v.toFixed(1); } },
+          axisLine: { show: false }, axisTick: { show: false },
+          splitLine: { lineStyle: { color: '#334155' } },
+        },
+        {
+          type: 'value', position: 'right',
+          axisLabel: { color: '#fbbf24', fontSize: 10, fontFamily: MONO, formatter: function (v) { return v.toFixed(2); } },
+          axisLine: { show: false }, axisTick: { show: false },
+          splitLine: { show: false },
+        },
+      ],
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross', lineStyle: { color: '#475569', type: 'dashed' }, label: { backgroundColor: '#475569' } },
+        backgroundColor: 'rgba(15,23,42,0.96)',
+        borderColor: '#334155',
+        borderWidth: 1,
+        padding: 8,
+        textStyle: { color: '#e2e8f0', fontSize: 10, fontFamily: MONO },
+        formatter: function (params) {
+          var list = Array.isArray(params) ? params : params ? [params] : [];
+          if (!list.length || list[0].value == null) return '';
+          var t = list[0].value[0];
+          var html = '<div style="font-size:11px;font-weight:600">' + formatSeconds(t, xSpan) + '</div>';
+          for (var i = 0; i < list.length; i++) {
+            var y = list[i].value[1];
+            var label = list[i].seriesName === 'VBUS' ? '电压' : '电流';
+            html += '<div>' + list[i].marker + label + ' ' + (y == null ? '—' : y.toFixed(3)) + '</div>';
+          }
+          return html;
+        },
+      },
+      series: [
+        { name: 'VBUS', type: 'line', yAxisIndex: 0, data: seriesData('v'), symbol: 'none', lineStyle: { width: 1.5, color: '#38bdf8' }, areaStyle: { color: 'rgba(56,189,248,0.06)' }, z: 2 },
+        { name: 'IBUS', type: 'line', yAxisIndex: 1, data: seriesData('a'), symbol: 'none', lineStyle: { width: 1.5, color: '#fbbf24' }, areaStyle: { color: 'rgba(251,191,36,0.06)' }, z: 1 },
+      ],
+    };
+  }
+
+  function updateChart() {
+    chart.setOption(buildChartOption());
+  }
+
+  window.addEventListener('resize', function () {
+    chart.resize();
+  });
+
+  function poll() {
+    fetch('/state', { cache: 'no-store' }).then(function (res) {
+      if (!res.ok) throw new Error('bad status ' + res.status);
+      return res.json();
+    }).then(processState).catch(function () {
+      setBadge('reconnect', '连接断开');
+    });
+  }
+
+  poll();
+  setInterval(poll, POLL_MS);
+})();
+</script>
+</body>
+</html>
